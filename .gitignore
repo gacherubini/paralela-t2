@@ -1,0 +1,18 @@
+# Binarios compilados
+mandelbrot_seq
+mandelbrot_mpi
+*.o
+
+# Saida do Slurm e cache do Python
+slurm-*.out
+__pycache__/
+
+# Artefatos do LaTeX
+relatorio/*.aux
+relatorio/*.log
+relatorio/*.out
+relatorio/*.synctex.gz
+
+# Contem a senha inicial das contas do LAD: nao publicar
+docs/qual-conta-lad-grupo.pdf
+docs/*.bak

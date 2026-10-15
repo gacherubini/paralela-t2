@@ -1,0 +1,240 @@
+% ============================================================================
+%  Relatorio Tecnico - Trabalho 2 de Programacao Paralela (MPI coord/trab)
+%  Formato exigido:
+%    pag. 1  -> coluna DUPLA, margens 1cm, fonte 10, somente texto
+%    pag. 2  -> coluna SIMPLES: tabelas + graficos (anexo)
+%    pag. 3+ -> coluna SIMPLES: codigo fonte
+%  Compilar a partir de relatorio/ (usa ../resultados/ e ../ para os fontes):
+%    tectonic relatorio.tex    ou    pdflatex relatorio.tex
+%  \pend{...} marca em VERMELHO o que depende das medicoes no cluster.
+%  Antes de entregar: grep pend relatorio.tex deve voltar so a definicao.
+%  Os numeros saem de resultados/tabelas.txt (python3 analisar.py).
+% ============================================================================
+\documentclass[10pt,a4paper,twocolumn]{article}
+
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[utf8]{inputenc}
+  \usepackage[T1]{fontenc}
+\fi
+\usepackage[brazil]{babel}
+\usepackage[margin=1cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\setlength{\columnsep}{6mm}
+\pagestyle{empty}
+
+\newcommand{\pend}[1]{\textcolor{red}{\textbf{[#1]}}}
+
+% Inclui o grafico se ja existir; senao deixa um aviso no lugar.
+\newcommand{\grafico}[2][\linewidth]{\IfFileExists{../resultados/#2.pdf}%
+  {\includegraphics[width=#1]{../resultados/#2.pdf}}%
+  {\pend{falta \detokenize{#2}.pdf: rodar python3 graficos.py}}}
+
+\lstdefinestyle{codigoC}{
+  language=C, basicstyle=\ttfamily\scriptsize, numbers=left,
+  numberstyle=\tiny\color{gray}, keywordstyle=\color{blue!70!black},
+  commentstyle=\itshape\color{green!40!black}, stringstyle=\color{red!60!black},
+  showstringspaces=false, breaklines=true, tabsize=4,
+  columns=fullflexible, lineskip=-1pt,
+  morekeywords={MPI_Init,MPI_Send,MPI_Recv,MPI_Status,MPI_Gather,MPI_Gatherv,
+                MPI_Barrier,MPI_Wtime}
+}
+
+\begin{document}
+
+% ============================ CABECALHO =====================================
+\twocolumn[
+{\centering
+  {\large\bfseries Mandelbrot com MPI no Modelo Coordenador/Trabalhador}\\[2pt]
+  {\small Trabalho 2 --- Programação Paralela --- Grupo 20 (conta LAD \texttt{cp32020})}\\[1pt]
+  {\small Gabriel Coelho \quad Gabriel Cherubini}\\[1pt]
+  {\small Escola Politécnica --- PUCRS \quad --- \quad 2026/2}\par}
+\vspace{3mm}
+]
+
+% ======================== PAGINA 1: TEXTO ===================================
+
+\textbf{1. Problema e mapeamento.}
+Mantivemos o problema do T1: para cada pixel $c$ de uma janela fixa do plano
+complexo, itera-se $z_{n+1}=z_n^2+c$ até $|z|>2$ ou 2000 iterações. O
+\textbf{saco de trabalho} é a imagem, uma matriz de inteiros que só o
+coordenador guarda; cada \textbf{vetor} é uma linha, e processá-lo é calcular
+as iterações dos seus pixels. As linhas são independentes, mas de custo muito
+desigual (Fig.~3, esq.): as centrais cruzam o conjunto e custam o máximo por
+pixel, as das bordas escapam logo. É o cenário em que distribuir sob demanda
+compensa.
+
+\textbf{2. Implementação SPMD.}
+Um fonte gera as duas versões (\texttt{gcc} e \texttt{mpicc -DPARALELO}, ambas
+\texttt{-O2}). O rank 0 coordena e não calcula; os demais trabalham. O
+trabalhador toma a iniciativa com \texttt{PEDIDO}; recebe \texttt{TAREFA} com
+o índice da linha; devolve \texttt{RESULTADO} = [índice, pixels\ldots], que já
+vale como novo pedido. O coordenador recebe com \texttt{MPI\_ANY\_SOURCE}
+(\textbf{ordem de chegada}) e usa o índice para gravar o vetor na sua linha,
+\textbf{mantendo a ordem do saco}; vazio o saco, responde \texttt{FIM}.
+Funciona para qualquer $p\ge2$; \texttt{-k} agrupa $k$ linhas por tarefa. O
+checksum (soma das iterações) é \textbf{idêntico} ao sequencial em todas as
+execuções \pend{checksum}. A instrumentação mede, em cada processo, o tempo
+calculando, bloqueado em \texttt{Recv}/\texttt{Send} e o instante de
+dispensa, e registra o início e fim de cada tarefa; é coletada após o tempo
+medido, sem afetá-lo.
+
+\textbf{3. Ambiente e metodologia.}
+Dois nós exclusivos da atlantica \pend{nós}, cada um com 2$\times$ Xeon
+\pend{modelo} (8 núcleos, 16 threads HT), \pend{MPI}, gcc \pend{versão}.
+$p=2..32$ processos alternados entre os nós; até 16 há um por núcleo físico,
+com 32 usam-se as HT. Cada tempo é a mediana de 5 execuções (barras min--máx
+na Fig.~1); $T_{seq}$ é o binário sequencial. Como $p$ inclui o coordenador
+ocioso, o teto do speed-up é $p-1$ e o da eficiência, $(p-1)/p$.
+
+\textbf{4. Escalabilidade forte e fraca.}
+\pend{S(16)=?, E=?\%; S(32)=?, E=?\%, contra teto (p-1)/p. Fraca: E(32)=?\%.
+Uma frase ligando à seção 5. Comparar com o T1 em 1 nó: OpenMP S(8)=6,90.}
+
+\textbf{5. Para onde vai a eficiência.}
+Dividimos os recursos alocados, $p\cdot T$, em parcelas medidas (Fig.~2,
+Tab.~3): trabalho útil ($T_{seq}$, que é a própria eficiência); cálculo mais
+lento que no sequencial; o coordenador; comunicação; ociosidade final. A soma
+fecha em 100\% (resíduo < \pend{?}\%).
+\pend{Ler os números: até p=16 a perda é quase só o coordenador (1/p);
+comunicação ?\%; com 32 surge ?\% de cálculo mais lento = duas threads HT
+dividindo o núcleo. O coordenador fica ?\% ocioso: não é gargalo.}
+
+\textbf{6. Balanceamento de carga.}
+\pend{Com k=1, tempo calculando máx/média = ? (CV ?\%), embora as linhas por
+trabalhador variem de ? a ?: quem pega linhas caras recebe menos. Com um bloco
+fixo por trabalhador (k=133, divisão estática) máx/média = ? e o tempo sobe
+?$\times$. O perfil de custo previa ? s; medido ? s: o desbalanceamento vem do
+custo das linhas. O Gantt (Fig.~4) mostra todos terminando juntos no saco e a
+cauda no estático. Grão (Tab.~4): k=? é o melhor; k grande perde balanceamento.}
+
+\textbf{7. Comunicação e rede.}
+\pend{Intensidade (Fig.~5 esq.): com ? µs de cálculo por mensagem E=?\%;
+acima de ? µs se aproxima do teto. 1×2 nós: p=8 em 1 nó ?\% × 2 nós ?\%
+(custo da rede); p=16 em 1 nó com HT ?\% × 2 nós ?\%: HT custa mais/menos
+que a rede.}
+
+\textbf{8. Uso de IA.}
+Claude Code (Anthropic): implementação do protocolo, instrumentação, scripts
+de medição e análise, gráficos e esqueleto do relatório. O grupo definiu o
+mapeamento e a metodologia, executou e validou as medições e redigiu e
+revisou a análise.
+
+\textbf{9. Conclusão.}
+\pend{Resumo em 3 frases com os números principais.}
+
+% ==================== PAGINA 2: TABELAS E GRAFICOS ==========================
+\onecolumn
+\newpage
+\small
+
+\begin{minipage}[t]{0.49\linewidth}
+\textbf{Tab. 1 --- Forte.} 4096$^2$, 2000 it, $k=1$, mediana de 5.
+$S=T_{seq}/T$, $E=S/p$.\\[2pt]
+\begin{tabular}{rrrrr}
+\toprule
+$p$ & Tempo (s) & $S$ & $E$ (\%) & teto (\%) \\
+\midrule
+seq & \pend{?} & --- & --- & --- \\
+2  & \pend{?} & \pend{?} & \pend{?} & 50,0 \\
+4  & \pend{?} & \pend{?} & \pend{?} & 75,0 \\
+8  & \pend{?} & \pend{?} & \pend{?} & 87,5 \\
+16 & \pend{?} & \pend{?} & \pend{?} & 93,8 \\
+32 & \pend{?} & \pend{?} & \pend{?} & 96,9 \\
+\bottomrule
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.49\linewidth}
+\textbf{Tab. 2 --- Fraca.} 1024$^2$ pixels por processo.
+$S=p\,T_{seq}/T$, $E=T_{seq}/T$.\\[2pt]
+\begin{tabular}{rlrrr}
+\toprule
+$p$ & Imagem & Tempo (s) & $S$ & $E$ (\%) \\
+\midrule
+seq & 1024$^2$ & \pend{?} & 1,00 & 100,0 \\
+2  & 1448$^2$ & \pend{?} & \pend{?} & \pend{?} \\
+4  & 2048$^2$ & \pend{?} & \pend{?} & \pend{?} \\
+8  & 2896$^2$ & \pend{?} & \pend{?} & \pend{?} \\
+16 & 4096$^2$ & \pend{?} & \pend{?} & \pend{?} \\
+32 & 5793$^2$ & \pend{?} & \pend{?} & \pend{?} \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+
+\vspace{3mm}
+\begin{minipage}[t]{0.49\linewidth}
+\textbf{Tab. 3 --- Decomposição de $p\cdot T$} (\%), $k=1$.\\[2pt]
+\begin{tabular}{rrrrrr}
+\toprule
+$p$ & útil & cálc.+lento & coord. & comun. & ocioso fim \\
+\midrule
+2  & \pend{?} & \pend{?} & \pend{?} & \pend{?} & \pend{?} \\
+4  & \pend{?} & \pend{?} & \pend{?} & \pend{?} & \pend{?} \\
+8  & \pend{?} & \pend{?} & \pend{?} & \pend{?} & \pend{?} \\
+16 & \pend{?} & \pend{?} & \pend{?} & \pend{?} & \pend{?} \\
+32 & \pend{?} & \pend{?} & \pend{?} & \pend{?} & \pend{?} \\
+\bottomrule
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.49\linewidth}
+\textbf{Tab. 4 --- Grão}, $p=32$. $k=133$: um bloco fixo por trabalhador
+(estático).\\[2pt]
+\begin{tabular}{rrrrr}
+\toprule
+$k$ & Tempo (s) & $E$ (\%) & ocup. máx/méd & vs melhor \\
+\midrule
+1   & \pend{?} & \pend{?} & \pend{?} & \pend{?} \\
+4   & \pend{?} & \pend{?} & \pend{?} & \pend{?} \\
+16  & \pend{?} & \pend{?} & \pend{?} & \pend{?} \\
+64  & \pend{?} & \pend{?} & \pend{?} & \pend{?} \\
+133 & \pend{?} & \pend{?} & \pend{?} & \pend{?} \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+
+\vspace{3mm}
+\begin{center}
+\grafico[0.92\linewidth]{grafico_escala}\\
+\textbf{Fig. 1} --- Speed-up (barras: mín--máx de 5 execuções) e eficiência.
+Tracejado: ideal $S=p$; pontilhado: teto do modelo, $p-1$.\\[2mm]
+\grafico[0.92\linewidth]{grafico_decomposicao}\\
+\textbf{Fig. 2} --- Recursos alocados ($p\times T$) divididos pelo que
+cada processo fez; a fatia azul é a eficiência.
+\end{center}
+
+\newpage
+\begin{center}
+\grafico[0.92\linewidth]{grafico_balanceamento}\\
+\textbf{Fig. 3} --- Esq.: custo de cada linha, com as fronteiras dos blocos
+estáticos. Dir.: tempo calculando de cada trabalhador, saco ($k=1$) ×
+bloco fixo ($k=133$).\\[2mm]
+\grafico[0.92\linewidth]{grafico_gantt}\\
+\textbf{Fig. 4} --- Linha do tempo das tarefas de cada trabalhador ($p=32$).\\[2mm]
+\grafico[0.92\linewidth]{grafico_comunicacao}\\
+\textbf{Fig. 5} --- Esq.: eficiência conforme o cálculo por mensagem cresce
+(mesmo número de mensagens, \texttt{max\_iter} variando). Dir.: o mesmo $p$
+em 1 e em 2 nós.
+\end{center}
+\normalsize
+
+% ==================== CODIGO FONTE ==========================================
+\newpage
+\begin{center}\textbf{\large Código fonte --- \texttt{mandelbrot.c}}\end{center}
+\lstinputlisting[style=codigoC]{../mandelbrot.c}
+
+\newpage
+\begin{center}\textbf{\large Medição --- \texttt{medir.sh} e \texttt{job.sh}}\end{center}
+\lstinputlisting[style=codigoC,language=bash]{../medir.sh}
+\lstinputlisting[style=codigoC,language=bash]{../job.sh}
+
+\newpage
+\begin{center}\textbf{\large Análise --- \texttt{analisar.py}}\end{center}
+\lstinputlisting[style=codigoC,language=Python]{../analisar.py}
+
+\end{document}
