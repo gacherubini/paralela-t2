@@ -21,8 +21,9 @@ o índice que vai junto do vetor recoloca-o na linha original, mantendo a ordem.
 | `mandelbrot.c` | Fonte único: `gcc` → sequencial, `mpicc -DPARALELO` → MPI. Instrumentado (`-b`, `-r`, `-l`) |
 | `Makefile` | `make`; `make teste` confere checksum MPI = sequencial (np 2,3,5,8; k 1,7) |
 | `medir.sh` | Roda todos os experimentos → `resultados/*.csv` (mediana de 5, com min/max) |
-| `analisar.py` | Tabelas: escala, decomposição da eficiência, balanceamento, grão, intensidade, 1×2 nós |
+| `analisar.py` | Tabelas: escala, decomposição da eficiência, balanceamento, grão, intensidade, 1×2 nós. Gera também `resultados/tab_*.tex`, que o relatório inclui sozinho |
 | `graficos.py` | Os 5 gráficos (usa as mesmas contas do `analisar.py`) |
+| `job-teste.sh` | Ensaio de ~1 min com tamanhos mínimos: valida o MPI do cluster antes do job real |
 | `job.sh` | `sbatch job.sh`: 2 nós exclusivos, make + medir + analisar + gráficos |
 | `relatorio/relatorio.tex` | Relatório; `[?]` em vermelho = falta número do cluster |
 
@@ -33,14 +34,25 @@ ssh cp32020@atlantica.lad.pucrs.br          # via sparta se estiver fora da PUCR
 git clone https://github.com/gacherubini/paralela-t2 && cd paralela-t2
 which mpicc mpirun && mpirun --version      # confirmar o MPI disponível
 make                                        # compilar na hospedeira (não executar lá!)
-sbatch job.sh                               # ~30 min
+
+sbatch job-teste.sh                         # 1) ensaio de ~1 min
+cat slurm-teste-*.out                       #    tem de terminar com "ENSAIO OK"
+
+sbatch job.sh                               # 2) medição real, ~30 min
 squeue -u $USER ; tail -f slurm-*.out
+
+git add resultados && git commit -m "Add cluster measurements" && git push
 ```
+
+Com `resultados/` no repositório, o relatório se preenche: as tabelas vêm de
+`resultados/tab_*.tex` e os gráficos de `resultados/grafico_*.pdf`. O que fica
+para escrever à mão são os trechos `[?]` do texto (seções 4 a 7 e 9), lendo
+`resultados/tabelas.txt`.
 
 Depois, trazer `resultados/` para a máquina local (ou dar commit lá) e rodar
 `python3 graficos.py` se o nó não tiver matplotlib.
 
-**Conferir no início do `slurm-*.out`** (não deu para testar fora do LAD):
+**Conferir no `slurm-teste-*.out`** (não deu para testar fora do LAD):
 
 - Quantos ranks caíram em cada nó: com 32 em 2 nós, esperado 16 + 16; com 16 em
   1 nó, 16 no mesmo nó.

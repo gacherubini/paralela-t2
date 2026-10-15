@@ -242,5 +242,67 @@ def main():
         print()
 
 
+# ------------------------------------------------------------------- latex --
+def br(x, casas):
+    """Numero no formato do relatorio: virgula decimal."""
+    return ("%.*f" % (casas, x)).replace(".", ",")
+
+
+def grava(nome, linhas):
+    with open(os.path.join(DIR, nome), "w") as f:
+        f.write("\n".join(linhas) + "\n")
+
+
+def gera_latex():
+    """Escreve as linhas das tabelas do relatorio em resultados/tab_*.tex.
+    O relatorio.tex inclui esses arquivos quando existem: nenhum numero e
+    copiado a mao para as tabelas."""
+    seq, pts = escala("forte.csv", False)
+    if not seq:
+        return
+    tseq = seq["tempo"]
+    linhas = ["seq & %s & --- & --- & --- \\\\" % br(tseq, 3)]
+    for p, t, s, e, _, _ in pts:
+        linhas.append("%d & %s & %s & %s & %s \\\\" % (
+            p, br(t, 3), br(s, 2), br(100 * e, 1), br(100 * (p - 1) / p, 1)))
+    grava("tab_forte.tex", linhas)
+
+    seq_f, pts_f = escala("fraca.csv", True)
+    if seq_f:
+        _, mpi = execucoes("fraca.csv")
+        lado = {r["processos"]: r["largura"] for r in mpi}
+        linhas = ["seq & %d$^2$ & %s & 1,00 & 100,0 \\\\" %
+                  (seq_f["largura"], br(seq_f["tempo"], 3))]
+        for p, t, s, e, _, _ in pts_f:
+            linhas.append("%d & %d$^2$ & %s & %s & %s \\\\" % (
+                p, lado[p], br(t, 3), br(s, 2), br(100 * e, 1)))
+        grava("tab_fraca.tex", linhas)
+
+    grupos = cargas()
+    linhas = []
+    for (p, k) in sorted(grupos):
+        if k == 1:
+            d = decomposicao(grupos[(p, k)], tseq)
+            linhas.append("%d & " % p + " & ".join(
+                br(100 * d[c], 1) for c in PARCELAS[:5]) + " \\\\")
+    if linhas:
+        grava("tab_decomposicao.tex", linhas)
+
+    _, grao = execucoes("grao.csv")
+    if grao:
+        melhor = min(r["tempo"] for r in grao)
+        p = grao[0]["processos"]
+        linhas = []
+        for r in grao:
+            k = r["linhas_por_tarefa"]
+            g = grupos.get((p, k))
+            mm = br(balanceamento(g)["max_med"], 2) if g else "---"
+            linhas.append("%d & %s & %s & %s & %s$\\times$ \\\\" % (
+                k, br(r["tempo"], 3), br(100 * tseq / r["tempo"] / p, 1), mm,
+                br(r["tempo"] / melhor, 2)))
+        grava("tab_grao.tex", linhas)
+
+
 if __name__ == "__main__":
     main()
+    gera_latex()

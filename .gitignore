@@ -16,3 +16,4 @@ relatorio/*.synctex.gz
 # Contem a senha inicial das contas do LAD: nao publicar
 docs/qual-conta-lad-grupo.pdf
 docs/*.bak
+resultados-teste/
